@@ -1,8 +1,9 @@
 """tofnet PC receiver.
 
-Scans for BLE peripherals named "tofnet-*", connects to all of them in
-parallel, and prints distance notifications as they arrive. Reconnects
-automatically if a node drops.
+Continuously scans for BLE peripherals named "tofnet-*". As soon as one is
+detected, kicks off a connection so notifications start flowing immediately —
+no waiting on a fixed scan window. Late-arriving or power-cycled nodes are
+picked up automatically. Reconnects on drop.
 """
 import asyncio
 import struct
@@ -10,10 +11,10 @@ from datetime import datetime
 
 from bleak import BleakClient, BleakScanner
 from bleak.backends.device import BLEDevice
+from bleak.backends.scanner import AdvertisementData
 
 DISTANCE_CHAR_UUID = "c91a1001-7bf3-4f6e-9e1a-8d4b6f1c2a01"
 NAME_PREFIX = "tofnet-"
-SCAN_TIMEOUT_S = 20.0
 RECONNECT_DELAY_S = 3.0
 
 
@@ -41,22 +42,18 @@ async def manage_node(device: BLEDevice, name: str) -> None:
 
 
 async def main() -> None:
-    print(f"scanning {SCAN_TIMEOUT_S}s for {NAME_PREFIX}* peripherals...")
-    # On Windows, device.name is frequently empty even when the peripheral
-    # advertises a local name — read the adv data and use whichever is set.
-    seen = await BleakScanner.discover(timeout=SCAN_TIMEOUT_S, return_adv=True)
-    nodes: list[tuple[BLEDevice, str]] = []
-    for _, (device, adv) in seen.items():
+    tasks: dict[str, asyncio.Task] = {}
+
+    def on_detect(device: BLEDevice, adv: AdvertisementData) -> None:
         name = device.name or adv.local_name or ""
-        if name.startswith(NAME_PREFIX):
-            nodes.append((device, name))
+        if not name.startswith(NAME_PREFIX) or device.address in tasks:
+            return
+        print(f"detected: {name} ({device.address}) rssi={adv.rssi}")
+        tasks[device.address] = asyncio.create_task(manage_node(device, name))
 
-    if not nodes:
-        print("no tofnet nodes found — check the chips are powered and advertising")
-        return
-
-    print(f"found {len(nodes)} node(s): {', '.join(n for _, n in nodes)}")
-    await asyncio.gather(*(manage_node(d, n) for d, n in nodes))
+    print(f"scanning continuously for {NAME_PREFIX}* peripherals (Ctrl+C to stop)...")
+    async with BleakScanner(detection_callback=on_detect):
+        await asyncio.Event().wait()
 
 
 if __name__ == "__main__":
