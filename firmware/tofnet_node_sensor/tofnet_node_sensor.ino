@@ -2,6 +2,10 @@
 //
 // Same BLE behaviour as tofnet_node, but replaces the fake distance generator
 // with a real reading from a TF-Luna sensor over I2C.
+//
+// TF-Luna I2C trigger packet and 9-byte frame parsing adapted from:
+//   DroneBot Workshop — "TF-Luna LiDAR" (https://dronebotworkshop.com/tf-luna-lidar/)
+// No explicit license stated upstream; see README "Credits" section.
 
 #include <Wire.h>
 #include <BLEDevice.h>
