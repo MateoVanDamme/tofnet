@@ -58,8 +58,8 @@ def character_name(node_id: int) -> str:
 # uses the zone digit, e.g. P1Q3K2M4. 4 zones ^ 4 nodes = 256 possible sounds.
 # EDIT these metre boundaries to taste. A 0 / "no valid sensor reading" is
 # treated as the farthest zone (4).
-ZONE_EDGES_M = (2.0, 4.0, 6.0)   # <2 m -> 1, 2-4 -> 2, 4-6 -> 3, >=6 m -> 4
-NUM_ZONES = len(ZONE_EDGES_M) + 1
+ZONE_EDGES_M = [2.0, 4.0, 6.0]   # <2 m -> 1, 2-4 -> 2, 4-6 -> 3, >=6 m -> 4
+NUM_ZONES = len(ZONE_EDGES_M) + 1   # editable live in the UI; count stays fixed
 
 
 def distance_to_zone(mm: int) -> int:
@@ -191,11 +191,35 @@ class Dashboard:
         self.mixer_ok = False
         root.title("tofnet — live distances")
         root.configure(bg=BG)
-        root.geometry("1100x620")
+        root.geometry("1100x660")
 
         header = tk.Label(root, text="tofnet live measurements", bg=BG, fg=FG,
                          font=("Segoe UI", 18, "bold"))
         header.pack(pady=(12, 0))
+
+        # Configurable zone boundaries (metres): 3 limits -> 4 zones.
+        zrow = tk.Frame(root, bg=BG)
+        zrow.pack(pady=(4, 0))
+        tk.Label(zrow, text="Zone limits (m):", bg=BG, fg=MUTED,
+                font=("Segoe UI", 14)).pack(side="left", padx=(0, 8))
+
+        def zone_chip(n):
+            # The zone number sits between (and around) the limit boxes.
+            tk.Label(zrow, text=str(n), bg=BG, fg="#ffd54f",
+                    font=("Segoe UI", 15, "bold")).pack(side="left", padx=4)
+
+        self.edge_vars = []
+        for i in range(len(ZONE_EDGES_M)):
+            zone_chip(i + 1)            # zone below this limit
+            v = tk.DoubleVar(value=ZONE_EDGES_M[i])
+            sb = tk.Spinbox(zrow, from_=0.1, to=30.0, increment=0.5, width=5,
+                           textvariable=v, font=("Consolas", 14), justify="center",
+                           format="%.1f", command=self.on_edges_changed)
+            sb.bind("<Return>", lambda e: self.on_edges_changed())
+            sb.bind("<FocusOut>", lambda e: self.on_edges_changed())
+            sb.pack(side="left", padx=2)
+            self.edge_vars.append(v)
+        zone_chip(NUM_ZONES)            # zone above the last limit
 
         row = tk.Frame(root, bg=BG)
         row.pack(fill="both", padx=10, pady=10)
@@ -309,6 +333,22 @@ class Dashboard:
         for i in range(1, NUM_NODES + 1):
             parts.append(f"{marker_letter(i)}{self.cards[i].zone()}")
         return "".join(parts)
+
+    def on_edges_changed(self) -> None:
+        """Commit edited zone limits into ZONE_EDGES_M (kept in increasing order)."""
+        vals = []
+        for v in self.edge_vars:
+            try:
+                vals.append(float(v.get()))
+            except (tk.TclError, ValueError):
+                return                      # field blank / mid-edit — ignore for now
+        ordered = sorted(vals)
+        ZONE_EDGES_M[:] = ordered           # in-place so distance_to_zone() sees it
+        if ordered != vals:                 # snap the boxes back into increasing order
+            for v, f in zip(self.edge_vars, ordered):
+                v.set(f)
+        self.append_log(["  >> zone limits: "
+                        + " / ".join(f"{x:.1f}" for x in ordered) + " m"])
 
     def on_toggle(self) -> None:
         """One button: play the current code, or stop if it's already playing."""
