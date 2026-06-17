@@ -369,7 +369,7 @@ class Dashboard:
             return
         try:
             pygame.mixer.music.load(path)
-            pygame.mixer.music.play()
+            pygame.mixer.music.play(loops=-1)   # loop until ■ Stop is pressed
         except Exception as e:
             self.append_log([f"  >> play error: {e}"])
             return
